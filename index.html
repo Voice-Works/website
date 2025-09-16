@@ -800,43 +800,29 @@ document.addEventListener('DOMContentLoaded', function(){
 
 <script>
 (function () {
-  // Dein n8n Webhook (DO)
+  // === Deine feste Webhook-URL (DO) ===
   const WEBHOOK_URL = "https://n8nserver.your-voiceworks.de/webhook/retell-web-call";
 
-  // --- Retell SDK Loader (ESM mit UMD-Fallback) ---
-  async function ensureSdk() {
-    if (typeof window.RetellWebClient === "function") return window.RetellWebClient;
-
-    // ESM (empfohlen)
-    try {
-      const m = await import("https://cdn.jsdelivr.net/npm/retell-client-js-sdk@2.0.7/dist/index.esm.js");
-      const Ctor = m?.RetellWebClient || m?.default?.RetellWebClient || m?.default;
-      if (typeof Ctor === "function") {
-        window.RetellWebClient = Ctor;
-        return Ctor;
-      }
-    } catch (e) {
-      console.warn("[Retell] ESM load failed:", e);
-    }
-
-    // Fallback: UMD
-    await new Promise((resolve, reject) => {
+  // === Retell SDK (UMD, stabil) ===
+  function loadSdk() {
+    return new Promise((resolve, reject) => {
+      if (typeof window.RetellWebClient === "function") return resolve(window.RetellWebClient);
       const s = document.createElement("script");
       s.src = "https://cdn.jsdelivr.net/npm/retell-client-js-sdk@2.0.7/dist/index.umd.js";
       s.async = true;
-      s.onload = resolve;
-      s.onerror = reject;
+      s.onload = () => {
+        const Ctor =
+          window.RetellWebClient ||
+          (window.retellClientJsSdk && window.retellClientJsSdk.RetellWebClient) ||
+          (window.retell && window.retell.RetellWebClient);
+        return (typeof Ctor === "function") ? resolve(Ctor) : reject(new Error("Retell SDK konnte nicht geladen werden"));
+      };
+      s.onerror = () => reject(new Error("Retell SDK konnte nicht geladen werden"));
       document.head.appendChild(s);
     });
-    const Ctor =
-      window.RetellWebClient ||
-      (window.retellClientJsSdk && window.retellClientJsSdk.RetellWebClient) ||
-      (window.retell && window.retell.RetellWebClient);
-    if (typeof Ctor !== "function") throw new Error("Retell SDK konnte nicht geladen werden");
-    return Ctor;
   }
 
-  // Token vom n8n-Webhook holen
+  // === Token vom Webhook ===
   async function fetchToken() {
     const res = await fetch(WEBHOOK_URL, {
       method: "POST",
@@ -853,32 +839,7 @@ document.addEventListener('DOMContentLoaded', function(){
     return res.json();
   }
 
-  // Call starten
-  async function startCall(ev) {
-    try {
-      ev?.preventDefault?.();
-      ev?.stopPropagation?.();
-
-      const data = await fetchToken();
-      const token = data?.token || data?.access_token || data?.accessToken;
-      if (!token) throw new Error("Kein Access-Token erhalten");
-
-      const RetellWebClient = await ensureSdk();
-      const client = new RetellWebClient();
-
-      // (Optional) einfache Logs
-      client.on?.("call_started", () => console.log("[Retell] call_started"));
-      client.on?.("call_ended", () => console.log("[Retell] call_ended"));
-      client.on?.("error", (e) => console.error("[Retell] error:", e));
-
-      await client.startCall({ accessToken: token });
-    } catch (e) {
-      console.error("[VoiceWorks] Fehler:", e);
-      alert("VoiceWorks Fehler: " + (e?.message || e));
-    }
-  }
-
-  // Nur echte Start-Buttons binden (Navigation bleibt unberührt)
+  // === Nur echte Start-Buttons matchen ===
   function isAssistantButton(el) {
     if (!el) return false;
     if (el.classList?.contains("assistant-start-btn") || el.dataset.assistantStart === "true") return true;
@@ -886,80 +847,7 @@ document.addEventListener('DOMContentLoaded', function(){
     return /\bassistent\s*starten\b/i.test(txt) || /^\s*start\s*$/i.test(txt);
   }
 
-  function bindButtons() {
-    document.querySelectorAll("button, a, [role='button']").forEach((el) => {
-      if (isAssistantButton(el) && !el.__retellBound) {
-        el.addEventListener("click", startCall, false);
-        el.__retellBound = true;
-      }
-    });
-  }
-
-  document.addEventListener("DOMContentLoaded", bindButtons);
-  new MutationObserver(bindButtons).observe(document.body, { childList: true, subtree: true });
-})();
-</script>
-
-  <script>
-(function () {
-  // 1) Dein DO-Webhook:
-  const WEBHOOK_URL = "https://n8nserver.your-voiceworks.de/webhook/retell-web-call";
-
-  // 2) Retell SDK sicher laden (ESM -> UMD Fallback)
-  async function ensureSdk() {
-    if (typeof window.RetellWebClient === "function") return window.RetellWebClient;
-
-    // ESM (korrekte Datei: dist/index.m.js)
-    try {
-      const m = await import("https://cdn.jsdelivr.net/npm/retell-client-js-sdk@2.0.7/dist/index.m.js");
-      const Ctor = m?.RetellWebClient || m?.default;
-      if (typeof Ctor === "function") { window.RetellWebClient = Ctor; return Ctor; }
-    } catch (e) {
-      console.warn("[Retell] ESM load failed:", e);
-    }
-
-    // UMD Fallback
-    await new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/retell-client-js-sdk@2.0.7/dist/index.umd.js";
-      s.async = true;
-      s.onload = resolve;
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
-    const Ctor =
-      window.RetellWebClient ||
-      (window.retellClientJsSdk && window.retellClientJsSdk.RetellWebClient) ||
-      (window.retell && window.retell.RetellWebClient);
-    if (typeof Ctor !== "function") throw new Error("Retell SDK konnte nicht geladen werden");
-    return Ctor;
-  }
-
-  // 3) Token vom Webhook holen
-  async function fetchToken() {
-    const res = await fetch(WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-      mode: "cors",
-      credentials: "omit",
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      throw new Error("Webhook " + res.status + " " + res.statusText + " – " + t);
-    }
-    return res.json();
-  }
-
-  // 4) Nur echte Start-Buttons binden
-  function isAssistantButton(el) {
-    if (!el) return false;
-    if (el.classList?.contains("assistant-start-btn") || el.id === "start-assistant" || el.dataset.assistantStart === "true") return true;
-    const txt = (el.textContent || "").trim();
-    return /\bassistent\s*starten\b/i.test(txt) || /^\s*start\s*$/i.test(txt);
-  }
-
+  // === Call starten ===
   async function startCall(ev) {
     const el = ev?.currentTarget || ev?.target?.closest("button,a,[role='button']");
     if (!isAssistantButton(el)) return;
@@ -970,7 +858,7 @@ document.addEventListener('DOMContentLoaded', function(){
       const token = data?.token || data?.access_token || data?.accessToken;
       if (!token) throw new Error("Kein Access-Token erhalten");
 
-      const RetellWebClient = await ensureSdk();
+      const RetellWebClient = await loadSdk();
       const client = new RetellWebClient();
 
       client.on?.("call_started", () => console.log("[Retell] call_started"));
@@ -984,6 +872,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
 
+  // === Buttons binden (ohne Navigation zu stören) ===
   function bindButtons() {
     document.querySelectorAll("button, a, [role='button']").forEach((el) => {
       if (isAssistantButton(el) && !el.__retellBound) {
@@ -996,6 +885,7 @@ document.addEventListener('DOMContentLoaded', function(){
   new MutationObserver(bindButtons).observe(document.body, { childList: true, subtree: true });
 })();
 </script>
+
 
 
 </body>
